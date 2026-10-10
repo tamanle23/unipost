@@ -3,6 +3,14 @@ import { persist, createJSONStorage } from 'zustand/middleware';
 import type { SandboxPersona, SandboxPersonaId, SandboxState } from '../types';
 
 export const DEFAULT_SANDBOX_PERSONAS: Record<SandboxPersonaId, SandboxPersona> = {
+  system: {
+    id: 'system',
+    name: 'Sovereign Custodian (Me)',
+    username: 'custodian_root',
+    roles: ['ROLE_USER', 'ROLE_ADMIN', 'ROLE_SYSTEM_CUSTODIAN'],
+    defaultTenantId: 'SYSTEM',
+    description: 'Ultimate sovereign authority across all tenants, fleet operations, unconstrained quotas, and RBAC matrix',
+  },
   admin: {
     id: 'admin',
     name: 'Administrator',

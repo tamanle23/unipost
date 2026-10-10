@@ -2,7 +2,7 @@
  * Unified Sandbox Platform - Core Types
  */
 
-export type SandboxPersonaId = 'admin' | 'creator' | 'user' | 'custom';
+export type SandboxPersonaId = 'system' | 'admin' | 'creator' | 'user' | 'custom';
 
 export interface SandboxPersona {
   id: SandboxPersonaId;

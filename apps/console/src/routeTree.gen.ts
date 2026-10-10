@@ -10,7 +10,9 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as AuthenticatedRouteRouteImport } from './routes/_authenticated/route'
-import { Route as AuthenticatedIndexRouteImport } from './routes/_authenticated/index'
+import { Route as IndexRouteImport } from './routes/index'
+import { Route as AuthenticatedDashboardRouteImport } from './routes/_authenticated/dashboard'
+import { Route as publicLandingRouteImport } from './routes/(public)/landing'
 import { Route as errors503RouteImport } from './routes/(errors)/503'
 import { Route as errors500RouteImport } from './routes/(errors)/500'
 import { Route as errors404RouteImport } from './routes/(errors)/404'
@@ -31,21 +33,33 @@ import { Route as AuthenticatedHelpCenterIndexRouteImport } from './routes/_auth
 import { Route as AuthenticatedCustomerAccountsIndexRouteImport } from './routes/_authenticated/customer-accounts/index'
 import { Route as AuthenticatedChatsIndexRouteImport } from './routes/_authenticated/chats/index'
 import { Route as AuthenticatedAppsIndexRouteImport } from './routes/_authenticated/apps/index'
+import { Route as AuthenticatedSystemTenantsRouteImport } from './routes/_authenticated/system.tenants'
+import { Route as AuthenticatedSystemRolesRouteImport } from './routes/_authenticated/system.roles'
+import { Route as AuthenticatedSettingsWorkspacesRouteImport } from './routes/_authenticated/settings/workspaces'
 import { Route as AuthenticatedSettingsNotificationsRouteImport } from './routes/_authenticated/settings/notifications'
 import { Route as AuthenticatedSettingsDataPrivacyRouteImport } from './routes/_authenticated/settings/data-privacy'
-import { Route as AuthenticatedSettingsAppearanceRouteImport } from './routes/_authenticated/settings/appearance'
-import { Route as AuthenticatedSettingsWorkspacesRouteImport } from './routes/_authenticated/settings/workspaces'
 import { Route as AuthenticatedSettingsBillingRouteImport } from './routes/_authenticated/settings/billing'
+import { Route as AuthenticatedSettingsAppearanceRouteImport } from './routes/_authenticated/settings/appearance'
 import { Route as AuthenticatedErrorsErrorRouteImport } from './routes/_authenticated/errors/$error'
 
 const AuthenticatedRouteRoute = AuthenticatedRouteRouteImport.update({
   id: '/_authenticated',
   getParentRoute: () => rootRouteImport,
 } as any)
-const AuthenticatedIndexRoute = AuthenticatedIndexRouteImport.update({
+const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AuthenticatedDashboardRoute = AuthenticatedDashboardRouteImport.update({
+  id: '/dashboard',
+  path: '/dashboard',
   getParentRoute: () => AuthenticatedRouteRoute,
+} as any)
+const publicLandingRoute = publicLandingRouteImport.update({
+  id: '/(public)/landing',
+  path: '/landing',
+  getParentRoute: () => rootRouteImport,
 } as any)
 const errors503Route = errors503RouteImport.update({
   id: '/(errors)/503',
@@ -153,6 +167,24 @@ const AuthenticatedAppsIndexRoute = AuthenticatedAppsIndexRouteImport.update({
   path: '/apps/',
   getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
+const AuthenticatedSystemTenantsRoute =
+  AuthenticatedSystemTenantsRouteImport.update({
+    id: '/system/tenants',
+    path: '/system/tenants',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
+const AuthenticatedSystemRolesRoute =
+  AuthenticatedSystemRolesRouteImport.update({
+    id: '/system/roles',
+    path: '/system/roles',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
+const AuthenticatedSettingsWorkspacesRoute =
+  AuthenticatedSettingsWorkspacesRouteImport.update({
+    id: '/workspaces',
+    path: '/workspaces',
+    getParentRoute: () => AuthenticatedSettingsRouteRoute,
+  } as any)
 const AuthenticatedSettingsNotificationsRoute =
   AuthenticatedSettingsNotificationsRouteImport.update({
     id: '/notifications',
@@ -165,22 +197,16 @@ const AuthenticatedSettingsDataPrivacyRoute =
     path: '/data-privacy',
     getParentRoute: () => AuthenticatedSettingsRouteRoute,
   } as any)
-const AuthenticatedSettingsAppearanceRoute =
-  AuthenticatedSettingsAppearanceRouteImport.update({
-    id: '/appearance',
-    path: '/appearance',
-    getParentRoute: () => AuthenticatedSettingsRouteRoute,
-  } as any)
-const AuthenticatedSettingsWorkspacesRoute =
-  AuthenticatedSettingsWorkspacesRouteImport.update({
-    id: '/workspaces',
-    path: '/workspaces',
-    getParentRoute: () => AuthenticatedSettingsRouteRoute,
-  } as any)
 const AuthenticatedSettingsBillingRoute =
   AuthenticatedSettingsBillingRouteImport.update({
     id: '/billing',
     path: '/billing',
+    getParentRoute: () => AuthenticatedSettingsRouteRoute,
+  } as any)
+const AuthenticatedSettingsAppearanceRoute =
+  AuthenticatedSettingsAppearanceRouteImport.update({
+    id: '/appearance',
+    path: '/appearance',
     getParentRoute: () => AuthenticatedSettingsRouteRoute,
   } as any)
 const AuthenticatedErrorsErrorRoute =
@@ -191,7 +217,7 @@ const AuthenticatedErrorsErrorRoute =
   } as any)
 
 export interface FileRoutesByFullPath {
-  '/': typeof AuthenticatedIndexRoute
+  '/': typeof IndexRoute
   '/settings': typeof AuthenticatedSettingsRouteRouteWithChildren
   '/forgot-password': typeof authForgotPasswordRoute
   '/otp': typeof authOtpRoute
@@ -203,12 +229,16 @@ export interface FileRoutesByFullPath {
   '/404': typeof errors404Route
   '/500': typeof errors500Route
   '/503': typeof errors503Route
+  '/landing': typeof publicLandingRoute
+  '/dashboard': typeof AuthenticatedDashboardRoute
   '/errors/$error': typeof AuthenticatedErrorsErrorRoute
   '/settings/appearance': typeof AuthenticatedSettingsAppearanceRoute
-  '/settings/workspaces': typeof AuthenticatedSettingsWorkspacesRoute
   '/settings/billing': typeof AuthenticatedSettingsBillingRoute
   '/settings/data-privacy': typeof AuthenticatedSettingsDataPrivacyRoute
   '/settings/notifications': typeof AuthenticatedSettingsNotificationsRoute
+  '/settings/workspaces': typeof AuthenticatedSettingsWorkspacesRoute
+  '/system/roles': typeof AuthenticatedSystemRolesRoute
+  '/system/tenants': typeof AuthenticatedSystemTenantsRoute
   '/apps/': typeof AuthenticatedAppsIndexRoute
   '/chats/': typeof AuthenticatedChatsIndexRoute
   '/customer-accounts/': typeof AuthenticatedCustomerAccountsIndexRoute
@@ -220,6 +250,7 @@ export interface FileRoutesByFullPath {
   '/users/': typeof AuthenticatedUsersIndexRoute
 }
 export interface FileRoutesByTo {
+  '/': typeof IndexRoute
   '/forgot-password': typeof authForgotPasswordRoute
   '/otp': typeof authOtpRoute
   '/sign-in': typeof authSignInRoute
@@ -230,13 +261,16 @@ export interface FileRoutesByTo {
   '/404': typeof errors404Route
   '/500': typeof errors500Route
   '/503': typeof errors503Route
-  '/': typeof AuthenticatedIndexRoute
+  '/landing': typeof publicLandingRoute
+  '/dashboard': typeof AuthenticatedDashboardRoute
   '/errors/$error': typeof AuthenticatedErrorsErrorRoute
   '/settings/appearance': typeof AuthenticatedSettingsAppearanceRoute
-  '/settings/workspaces': typeof AuthenticatedSettingsWorkspacesRoute
   '/settings/billing': typeof AuthenticatedSettingsBillingRoute
   '/settings/data-privacy': typeof AuthenticatedSettingsDataPrivacyRoute
   '/settings/notifications': typeof AuthenticatedSettingsNotificationsRoute
+  '/settings/workspaces': typeof AuthenticatedSettingsWorkspacesRoute
+  '/system/roles': typeof AuthenticatedSystemRolesRoute
+  '/system/tenants': typeof AuthenticatedSystemTenantsRoute
   '/apps': typeof AuthenticatedAppsIndexRoute
   '/chats': typeof AuthenticatedChatsIndexRoute
   '/customer-accounts': typeof AuthenticatedCustomerAccountsIndexRoute
@@ -249,6 +283,7 @@ export interface FileRoutesByTo {
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
+  '/': typeof IndexRoute
   '/_authenticated': typeof AuthenticatedRouteRouteWithChildren
   '/_authenticated/settings': typeof AuthenticatedSettingsRouteRouteWithChildren
   '/(auth)/forgot-password': typeof authForgotPasswordRoute
@@ -261,13 +296,16 @@ export interface FileRoutesById {
   '/(errors)/404': typeof errors404Route
   '/(errors)/500': typeof errors500Route
   '/(errors)/503': typeof errors503Route
-  '/_authenticated/': typeof AuthenticatedIndexRoute
+  '/(public)/landing': typeof publicLandingRoute
+  '/_authenticated/dashboard': typeof AuthenticatedDashboardRoute
   '/_authenticated/errors/$error': typeof AuthenticatedErrorsErrorRoute
   '/_authenticated/settings/appearance': typeof AuthenticatedSettingsAppearanceRoute
-  '/_authenticated/settings/workspaces': typeof AuthenticatedSettingsWorkspacesRoute
   '/_authenticated/settings/billing': typeof AuthenticatedSettingsBillingRoute
   '/_authenticated/settings/data-privacy': typeof AuthenticatedSettingsDataPrivacyRoute
   '/_authenticated/settings/notifications': typeof AuthenticatedSettingsNotificationsRoute
+  '/_authenticated/settings/workspaces': typeof AuthenticatedSettingsWorkspacesRoute
+  '/_authenticated/system/roles': typeof AuthenticatedSystemRolesRoute
+  '/_authenticated/system/tenants': typeof AuthenticatedSystemTenantsRoute
   '/_authenticated/apps/': typeof AuthenticatedAppsIndexRoute
   '/_authenticated/chats/': typeof AuthenticatedChatsIndexRoute
   '/_authenticated/customer-accounts/': typeof AuthenticatedCustomerAccountsIndexRoute
@@ -293,12 +331,16 @@ export interface FileRouteTypes {
     | '/404'
     | '/500'
     | '/503'
+    | '/landing'
+    | '/dashboard'
     | '/errors/$error'
     | '/settings/appearance'
-    | '/settings/workspaces'
     | '/settings/billing'
     | '/settings/data-privacy'
     | '/settings/notifications'
+    | '/settings/workspaces'
+    | '/system/roles'
+    | '/system/tenants'
     | '/apps/'
     | '/chats/'
     | '/customer-accounts/'
@@ -310,6 +352,7 @@ export interface FileRouteTypes {
     | '/users/'
   fileRoutesByTo: FileRoutesByTo
   to:
+    | '/'
     | '/forgot-password'
     | '/otp'
     | '/sign-in'
@@ -320,13 +363,16 @@ export interface FileRouteTypes {
     | '/404'
     | '/500'
     | '/503'
-    | '/'
+    | '/landing'
+    | '/dashboard'
     | '/errors/$error'
     | '/settings/appearance'
-    | '/settings/workspaces'
     | '/settings/billing'
     | '/settings/data-privacy'
     | '/settings/notifications'
+    | '/settings/workspaces'
+    | '/system/roles'
+    | '/system/tenants'
     | '/apps'
     | '/chats'
     | '/customer-accounts'
@@ -338,6 +384,7 @@ export interface FileRouteTypes {
     | '/users'
   id:
     | '__root__'
+    | '/'
     | '/_authenticated'
     | '/_authenticated/settings'
     | '/(auth)/forgot-password'
@@ -350,13 +397,16 @@ export interface FileRouteTypes {
     | '/(errors)/404'
     | '/(errors)/500'
     | '/(errors)/503'
-    | '/_authenticated/'
+    | '/(public)/landing'
+    | '/_authenticated/dashboard'
     | '/_authenticated/errors/$error'
     | '/_authenticated/settings/appearance'
-    | '/_authenticated/settings/workspaces'
     | '/_authenticated/settings/billing'
     | '/_authenticated/settings/data-privacy'
     | '/_authenticated/settings/notifications'
+    | '/_authenticated/settings/workspaces'
+    | '/_authenticated/system/roles'
+    | '/_authenticated/system/tenants'
     | '/_authenticated/apps/'
     | '/_authenticated/chats/'
     | '/_authenticated/customer-accounts/'
@@ -369,6 +419,7 @@ export interface FileRouteTypes {
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
+  IndexRoute: typeof IndexRoute
   AuthenticatedRouteRoute: typeof AuthenticatedRouteRouteWithChildren
   authForgotPasswordRoute: typeof authForgotPasswordRoute
   authOtpRoute: typeof authOtpRoute
@@ -380,6 +431,7 @@ export interface RootRouteChildren {
   errors404Route: typeof errors404Route
   errors500Route: typeof errors500Route
   errors503Route: typeof errors503Route
+  publicLandingRoute: typeof publicLandingRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -391,12 +443,26 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedRouteRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/_authenticated/': {
-      id: '/_authenticated/'
+    '/': {
+      id: '/'
       path: '/'
       fullPath: '/'
-      preLoaderRoute: typeof AuthenticatedIndexRouteImport
+      preLoaderRoute: typeof IndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/_authenticated/dashboard': {
+      id: '/_authenticated/dashboard'
+      path: '/dashboard'
+      fullPath: '/dashboard'
+      preLoaderRoute: typeof AuthenticatedDashboardRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/(public)/landing': {
+      id: '/(public)/landing'
+      path: '/landing'
+      fullPath: '/landing'
+      preLoaderRoute: typeof publicLandingRouteImport
+      parentRoute: typeof rootRouteImport
     }
     '/(errors)/503': {
       id: '/(errors)/503'
@@ -538,6 +604,27 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedAppsIndexRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
+    '/_authenticated/system/tenants': {
+      id: '/_authenticated/system/tenants'
+      path: '/system/tenants'
+      fullPath: '/system/tenants'
+      preLoaderRoute: typeof AuthenticatedSystemTenantsRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/system/roles': {
+      id: '/_authenticated/system/roles'
+      path: '/system/roles'
+      fullPath: '/system/roles'
+      preLoaderRoute: typeof AuthenticatedSystemRolesRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/settings/workspaces': {
+      id: '/_authenticated/settings/workspaces'
+      path: '/workspaces'
+      fullPath: '/settings/workspaces'
+      preLoaderRoute: typeof AuthenticatedSettingsWorkspacesRouteImport
+      parentRoute: typeof AuthenticatedSettingsRouteRoute
+    }
     '/_authenticated/settings/notifications': {
       id: '/_authenticated/settings/notifications'
       path: '/notifications'
@@ -552,25 +639,18 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedSettingsDataPrivacyRouteImport
       parentRoute: typeof AuthenticatedSettingsRouteRoute
     }
-    '/_authenticated/settings/appearance': {
-      id: '/_authenticated/settings/appearance'
-      path: '/appearance'
-      fullPath: '/settings/appearance'
-      preLoaderRoute: typeof AuthenticatedSettingsAppearanceRouteImport
-      parentRoute: typeof AuthenticatedSettingsRouteRoute
-    }
-    '/_authenticated/settings/workspaces': {
-      id: '/_authenticated/settings/workspaces'
-      path: '/workspaces'
-      fullPath: '/settings/workspaces'
-      preLoaderRoute: typeof AuthenticatedSettingsWorkspacesRouteImport
-      parentRoute: typeof AuthenticatedSettingsRouteRoute
-    }
     '/_authenticated/settings/billing': {
       id: '/_authenticated/settings/billing'
       path: '/billing'
       fullPath: '/settings/billing'
       preLoaderRoute: typeof AuthenticatedSettingsBillingRouteImport
+      parentRoute: typeof AuthenticatedSettingsRouteRoute
+    }
+    '/_authenticated/settings/appearance': {
+      id: '/_authenticated/settings/appearance'
+      path: '/appearance'
+      fullPath: '/settings/appearance'
+      preLoaderRoute: typeof AuthenticatedSettingsAppearanceRouteImport
       parentRoute: typeof AuthenticatedSettingsRouteRoute
     }
     '/_authenticated/errors/$error': {
@@ -585,22 +665,22 @@ declare module '@tanstack/react-router' {
 
 interface AuthenticatedSettingsRouteRouteChildren {
   AuthenticatedSettingsAppearanceRoute: typeof AuthenticatedSettingsAppearanceRoute
-  AuthenticatedSettingsWorkspacesRoute: typeof AuthenticatedSettingsWorkspacesRoute
   AuthenticatedSettingsBillingRoute: typeof AuthenticatedSettingsBillingRoute
   AuthenticatedSettingsDataPrivacyRoute: typeof AuthenticatedSettingsDataPrivacyRoute
   AuthenticatedSettingsNotificationsRoute: typeof AuthenticatedSettingsNotificationsRoute
+  AuthenticatedSettingsWorkspacesRoute: typeof AuthenticatedSettingsWorkspacesRoute
   AuthenticatedSettingsIndexRoute: typeof AuthenticatedSettingsIndexRoute
 }
 
 const AuthenticatedSettingsRouteRouteChildren: AuthenticatedSettingsRouteRouteChildren =
   {
     AuthenticatedSettingsAppearanceRoute: AuthenticatedSettingsAppearanceRoute,
-    AuthenticatedSettingsWorkspacesRoute: AuthenticatedSettingsWorkspacesRoute,
     AuthenticatedSettingsBillingRoute: AuthenticatedSettingsBillingRoute,
     AuthenticatedSettingsDataPrivacyRoute:
       AuthenticatedSettingsDataPrivacyRoute,
     AuthenticatedSettingsNotificationsRoute:
       AuthenticatedSettingsNotificationsRoute,
+    AuthenticatedSettingsWorkspacesRoute: AuthenticatedSettingsWorkspacesRoute,
     AuthenticatedSettingsIndexRoute: AuthenticatedSettingsIndexRoute,
   }
 
@@ -611,8 +691,10 @@ const AuthenticatedSettingsRouteRouteWithChildren =
 
 interface AuthenticatedRouteRouteChildren {
   AuthenticatedSettingsRouteRoute: typeof AuthenticatedSettingsRouteRouteWithChildren
-  AuthenticatedIndexRoute: typeof AuthenticatedIndexRoute
+  AuthenticatedDashboardRoute: typeof AuthenticatedDashboardRoute
   AuthenticatedErrorsErrorRoute: typeof AuthenticatedErrorsErrorRoute
+  AuthenticatedSystemRolesRoute: typeof AuthenticatedSystemRolesRoute
+  AuthenticatedSystemTenantsRoute: typeof AuthenticatedSystemTenantsRoute
   AuthenticatedAppsIndexRoute: typeof AuthenticatedAppsIndexRoute
   AuthenticatedChatsIndexRoute: typeof AuthenticatedChatsIndexRoute
   AuthenticatedCustomerAccountsIndexRoute: typeof AuthenticatedCustomerAccountsIndexRoute
@@ -625,8 +707,10 @@ interface AuthenticatedRouteRouteChildren {
 
 const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedSettingsRouteRoute: AuthenticatedSettingsRouteRouteWithChildren,
-  AuthenticatedIndexRoute: AuthenticatedIndexRoute,
+  AuthenticatedDashboardRoute: AuthenticatedDashboardRoute,
   AuthenticatedErrorsErrorRoute: AuthenticatedErrorsErrorRoute,
+  AuthenticatedSystemRolesRoute: AuthenticatedSystemRolesRoute,
+  AuthenticatedSystemTenantsRoute: AuthenticatedSystemTenantsRoute,
   AuthenticatedAppsIndexRoute: AuthenticatedAppsIndexRoute,
   AuthenticatedChatsIndexRoute: AuthenticatedChatsIndexRoute,
   AuthenticatedCustomerAccountsIndexRoute:
@@ -642,6 +726,7 @@ const AuthenticatedRouteRouteWithChildren =
   AuthenticatedRouteRoute._addFileChildren(AuthenticatedRouteRouteChildren)
 
 const rootRouteChildren: RootRouteChildren = {
+  IndexRoute: IndexRoute,
   AuthenticatedRouteRoute: AuthenticatedRouteRouteWithChildren,
   authForgotPasswordRoute: authForgotPasswordRoute,
   authOtpRoute: authOtpRoute,
@@ -653,6 +738,7 @@ const rootRouteChildren: RootRouteChildren = {
   errors404Route: errors404Route,
   errors500Route: errors500Route,
   errors503Route: errors503Route,
+  publicLandingRoute: publicLandingRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

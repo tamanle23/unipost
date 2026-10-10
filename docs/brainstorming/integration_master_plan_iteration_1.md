@@ -1,9 +1,16 @@
-# Architecture & Alignment Blueprint: Enterprise-Grade Multi-Tier Monorepo Strategy
+# Integration Master Plan (Iteration 1): Enterprise-Grade Multi-Tier Monorepo Strategy & Dynamic Metadata Fabric
 
-> **Classification:** Living Architectural Specification & Enterprise Systems Standard  
+> **Document Reference:** `docs/brainstorming/integration_master_plan_iteration_1.md`  
+> **Iteration:** 1 (Enterprise Baseline)  
+> **Classification:** Master Systems Architecture Specification & Monorepo Integration Standard  
 > **Authors:** Lead Systems Architect & Full-Stack Engineering Team  
 > **Target Scope:** `@unipost/backend`, `@unipost/console`, `@unipost/desktop`, `mobile-ui`, `tekgo-ui`, and `packages/*`  
-> **Core Pillars:** Zero-Downtime Dynamic Metadata, Zero-Trust Multi-Tenancy, Transactional Outbox, Cache Stampede Defense, Optimistic Concurrency Control, and W3C Distributed Tracing.
+> **Synthesized Authoritative Sources:**  
+> - `docs/brainstorming/multi_tier_monorepo_alignment_blueprint.md`  
+> - `docs/brainstorming/unlocking_full_potential_of_dynamic_metadata.md`  
+> - `docs/brainstorming/track_2_declarative_state_machines_design.md`  
+> - `docs/enterprise_transformation_blueprint.md`  
+> - `docs/multi-tenants/11_system_tenant_sovereign_custody_architecture.md`
 
 ---
 
@@ -29,7 +36,7 @@ flowchart TD
 
     subgraph Fabric["Enterprise Dynamic Metadata Fabric"]
         SchemaCore["Draft-07 Validation + AST Depth Guard"]
-        FSM["CEL Declarative State Machine Engine"]
+        FSM["Track 2: Declarative State Machine Engine (FSM)"]
         OCC["Optimistic Concurrency & 3-Way Auto-Merge"]
         GraphEngine["Pattern C Recursive Lineage Engine"]
         Outbox["Spring Modulith Transactional Outbox"]
@@ -224,7 +231,171 @@ public CompiledSchema getCompiledSchema(String tenantId, String entityTypeId) {
 
 ---
 
-## 5. Mobile Operator Console: Zero-Data-Loss Engine (`mobile-ui`)
+## 5. Declarative Finite State Machine (FSM) & Workflow Engine (Track 2 Deep-Dive)
+
+Synthesizing the complete architecture from [`docs/brainstorming/track_2_declarative_state_machines_design.md`](file:///c:/Users/Admin/workspace/git/unipost/docs/brainstorming/track_2_declarative_state_machines_design.md), dynamic records are elevated into **stateful domain entities with deterministic lifecycles**.
+
+```mermaid
+flowchart TD
+    subgraph ClientLayer["Client Layer (Web / Mobile / Public)"]
+        Req["POST /records/{id}/transition?action=SUBMIT"]
+    end
+
+    subgraph ControllerLayer["Presentation Layer (MetadataController)"]
+        Ctrl["MetadataController.transitionRecordState()"]
+    end
+
+    subgraph ServiceLayer["Core FSM Engine (EntityLifecycleService)"]
+        Gate1["Gate 1: Tenant Context & Isolation Check"]
+        Gate2["Gate 2: State Graph Transition Validity Check"]
+        Gate3["Gate 3: Role-Based Authority Check (Spring Security)"]
+        Gate4["Gate 4: Mandatory Supporting Attributes Validation"]
+        Gate5["Gate 5: SpEL / Google CEL Dynamic Guard Evaluation"]
+    end
+
+    subgraph MutationLayer["Transactional Persistence"]
+        Mutation["State Mutation + Optimistic Lock (@Version)"]
+        OutboxWrite["Transactional Outbox (UNIPOST_EVENT_OUTBOX)"]
+        EventPub["ApplicationEventPublisher.publishEvent(EntityStateChangedEvent)"]
+    end
+
+    subgraph AsyncSagas["Spring Modulith Event Sagas (@Async AFTER_COMMIT)"]
+        Audit["RFC 6902 JSON Patch Audit Logger"]
+        Webhook["Webhook Notification Dispatcher (to tekgo-ui)"]
+        Integration["Downstream Microservice Sagas"]
+    end
+
+    Req --> Ctrl
+    Ctrl --> Gate1
+    Gate1 --> Gate2
+    Gate2 --> Gate3
+    Gate3 --> Gate4
+    Gate4 --> Gate5
+    Gate5 --> Mutation
+    Mutation --> OutboxWrite
+    Mutation --> EventPub
+    EventPub --> Audit
+    EventPub --> Webhook
+    EventPub --> Integration
+```
+
+### 5.1 Database Model & Schema Specification
+`UNIPOST_ENTITY_TYPES` is extended with a JSONB column `lifecycle_config`:
+
+```sql
+-- Liquibase changeset migration definition
+ALTER TABLE UNIPOST_ENTITY_TYPES
+ADD COLUMN lifecycle_config JSONB DEFAULT NULL;
+
+COMMENT ON COLUMN UNIPOST_ENTITY_TYPES.lifecycle_config IS
+'JSONB schema storing state machine definitions, initial state, states list, transition rules, required attributes, allowed roles, and guard expressions';
+```
+
+#### JSON Schema Specification for `lifecycle_config`
+```json
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "LifecycleConfigSchema",
+  "type": "object",
+  "properties": {
+    "state_field": {
+      "type": "string",
+      "default": "status",
+      "description": "Attribute key in entity attributes map that holds the state value"
+    },
+    "initial_state": {
+      "type": "string",
+      "description": "Initial state automatically set on creation if state_field is omitted"
+    },
+    "states": {
+      "type": "array",
+      "items": { "type": "string" },
+      "minItems": 1,
+      "description": "Exhaustive list of valid states in this state machine"
+    },
+    "transitions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "from": {
+            "type": "string",
+            "description": "Source state identifier or '*' for wildcard match"
+          },
+          "to": {
+            "type": "string",
+            "description": "Destination state identifier"
+          },
+          "action": {
+            "type": "string",
+            "description": "Trigger action name (e.g., SUBMIT, APPROVE, REJECT, ARCHIVE)"
+          },
+          "required_attributes": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "Attributes that MUST be present and non-null in attributes before transitioning"
+          },
+          "guard_expression": {
+            "type": "string",
+            "description": "SpEL/CEL expression evaluated against attributes map returning boolean"
+          },
+          "allowed_roles": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "Spring Security GrantedAuthority role names permitted to invoke transition"
+          }
+        },
+        "required": ["from", "to", "action"]
+      }
+    }
+  },
+  "required": ["state_field", "initial_state", "states", "transitions"]
+}
+```
+
+### 5.2 The 5-Gate Sequential Validation Engine
+When a transition is requested, `EntityLifecycleService` evaluates five sequential gates:
+1. **Gate 1: Tenant Context Isolation Gate**: Asserts `record.tenantId.equals(TenantContextHolder.getTenantId())`.
+2. **Gate 2: State Graph Transition Validity Gate**: Matches `action` and ensures `from == currentState` or `from == '*'`. Throws `MetadataConflictException` on invalid trajectory.
+3. **Gate 3: Role-Based Authority Gate**: Verifies caller `Authentication.getAuthorities()` contains at least one of `allowed_roles`.
+4. **Gate 4: Required Attribute Presence Gate**: Asserts every key in `required_attributes` is present and non-empty.
+5. **Gate 5: Dynamic Guard Expression Gate**: Evaluates `guard_expression` via `GuardEvaluatorStrategy`.
+
+### 5.3 Strategy Pattern for Guard Evaluators
+```java
+public interface GuardEvaluatorStrategy {
+    boolean evaluate(String guardExpression,
+                     Map<String, Object> attributes,
+                     Authentication authentication,
+                     String tenantId,
+                     String oldState,
+                     String newState);
+}
+```
+Available implementations: `SpelGuardEvaluatorStrategy` (default Spring SpEL with expression caching) and `CelGuardEvaluatorStrategy` (Google Common Expression Language for cloud portability).
+
+### 5.4 Domain Event Sagas & Decoupled Execution
+Upon successful transition, the engine dispatches `EntityStateChangedEvent`:
+```java
+public record EntityStateChangedEvent(
+    String tenantId,
+    Long entityTypeId,
+    Long recordId,
+    String oldState,
+    String newState,
+    String action,
+    String triggeredBy,
+    Map<String, Object> attributesSnapshot,
+    Instant timestamp
+) {}
+```
+Spring Modulith transactional listeners react to the event:
+- **Audit Logger**: Writes RFC 6902 JSON patch to `UNIPOST_ENTITY_AUDIT_LOGS`.
+- **Outbox Publisher**: Inserts into `UNIPOST_EVENT_OUTBOX` for webhook delivery to `tekgo-ui`.
+
+---
+
+## 6. Mobile Operator Console: Zero-Data-Loss Engine (`mobile-ui`)
 
 Mobile operators operate in transit over unreliable cellular networks. The `mobile-ui` client guarantees zero data loss through an offline-first, encrypted outbox architecture.
 
@@ -245,35 +416,58 @@ flowchart TD
     ServerEval -- 5xx Network Failure --> ExponentialRetry["Exponential Backoff Retry (Max 5 attempts)"]
 ```
 
-### Mobile Offline Outbox Technical Specifications:
-1. **Cryptographic Storage**: Drafts and pending mutations are persisted in SQLite encrypted via SQLCipher with keys derived from `Expo.SecureStore`.
-2. **Two-Phase Mutation Receipts**:
-   - Every mutation carries a unique `mutationId` and `clientTimestamp`.
-   - The backend responds with an array of individual receipts:
-     ```json
-     {
-       "clientTransactionId": "tx_902183",
-       "receipts": [
-         { "mutationId": "mut_001", "status": "COMMITTED", "serverVersion": 5 },
-         { "mutationId": "mut_002", "status": "MERGED", "serverVersion": 6 }
-       ]
-     }
-     ```
-3. **Battery & Data-Saver Intelligence**: Background synchronizations pause when device battery drops below **15%** or if the OS reports metered network mode, unless explicitly overridden by user pull-to-refresh.
+### 6.1 Native Schema-Driven Dynamic Form Engine
+```typescript
+// apps/mobile-ui/src/components/dynamic-form/DynamicFieldRenderer.tsx
+export const DynamicFieldRenderer: React.FC<DynamicFieldProps> = ({ attribute, value, onChange, error }) => {
+  switch (attribute.dataType) {
+    case 'STRING':
+      return <GlassTextInput label={attribute.displayName} value={value ?? ''} onChangeText={onChange} />;
+    case 'BOOLEAN':
+      return <GlassToggleRow label={attribute.displayName} value={Boolean(value)} onValueChange={onChange} />;
+    case 'MEDIA_ASSET':
+      return <MediaPickerInput label={attribute.displayName} mediaUrl={value} onUploadComplete={onChange} />;
+    case 'RELATION_PICKER':
+      return <RelationPickerBottomSheet targetEntityType={attribute.targetEntityType!} selectedId={value} onSelect={onChange} />;
+    default:
+      return <GlassTextInput label={attribute.displayName} value={String(value ?? '')} onChangeText={onChange} />;
+  }
+};
+```
+
+### 6.2 Mobile FSM Lifecycle Action Bar
+```typescript
+// apps/mobile-ui/src/components/lifecycle/RecordLifecycleActionBar.tsx
+export const RecordLifecycleActionBar = ({ record, entityType, onTransition }) => {
+  const currentStatus = record.attributes.status || 'DRAFT';
+  const transitions = entityType.lifecycleConfig?.transitions.filter((t) => t.from === currentStatus) || [];
+  if (transitions.length === 0) return null;
+
+  return (
+    <View className="flex-row gap-3 p-4 bg-white/40 dark:bg-slate-900/40 backdrop-blur-xl border-t border-white/20">
+      {transitions.map((t) => (
+        <GlassButton key={t.action} variant={t.action === 'REJECT' ? 'destructive' : 'primary'} onPress={() => onTransition(t.action)}>
+          {t.action}
+        </GlassButton>
+      ))}
+    </View>
+  );
+};
+```
 
 ---
 
-## 6. Public Ingestion Gateway & Security for `tekgo-ui` (Blog Website)
+## 7. Public Ingestion Gateway & Security for `tekgo-ui` (Blog Website)
 
 `tekgo-ui` is a public-facing storefront. It must be resilient against scrapers, DDoS attacks, and API key leaks.
 
-### 6.1 Cryptographic Publishable Token Architecture
+### 7.1 Cryptographic Publishable Token Architecture
 To read published articles without passing sensitive credentials:
 1. **Publishable Token**: `pk_live_{tenantSlug}_{sha256Hex}` is embedded into Next.js environment configurations.
 2. **Read-Only Scope Enforcement**: The backend gateway strictly permits `SELECT` operations on records flagged with `status = 'PUBLISHED'`. Any attempt to invoke mutations, read drafts, or access private models yields `HTTP 403 Forbidden`.
 3. **Rate Limiting**: Public endpoints enforce a strict token-bucket rate limit (**100 req/sec per IP**, **2000 req/sec aggregate per tenant**).
 
-### 6.2 Signed Webhook Protocol with Timestamp Replay Protection
+### 7.2 Signed Webhook Protocol with Timestamp Replay Protection
 When an article is published from Console or Mobile, `unipost-ms-worker` delivers an HMAC-SHA256 signed payload to `tekgo-ui`:
 
 $$\text{Signature} = \text{HMAC-SHA256}(\text{Secret}, \text{Timestamp} + "." + \text{Payload})$$
@@ -293,10 +487,7 @@ export async function POST(req: NextRequest) {
 
   // 2. Cryptographic Signature Validation
   const rawBody = await req.text();
-  const expectedSig = crypto
-    .createHmac('sha256', secret)
-    .update(`${timestamp}.${rawBody}`)
-    .digest('hex');
+  const expectedSig = crypto.createHmac('sha256', secret).update(`${timestamp}.${rawBody}`).digest('hex');
 
   if (signature !== expectedSig) {
     return NextResponse.json({ error: 'Invalid HMAC signature' }, { status: 401 });
@@ -313,32 +504,39 @@ export async function POST(req: NextRequest) {
 
 ---
 
-## 7. Distributed Observability & W3C Trace Propagation
+## 8. Media & Asset Pipeline (`unipost-ms-fs`)
 
-When a request spans multiple clients, proxies, workers, and databases, root-cause analysis requires end-to-end distributed tracing.
+Binary assets (post hero images, attachments, author avatars) follow an immutable storage lifecycle:
 
 ```mermaid
 flowchart LR
-    MobileReq["mobile-ui (traceparent: 00-4bf9...-01)"] --> Gateway["Spring Gateway (Sanitizes & Logs)"]
-    Gateway --> Modulith["Spring Modulith (Spans: Validate, OCC, DB)"]
-    Modulith --> PostgresSpan["PostgreSQL Query Span (SQL + RLS)"]
-    Modulith --> OutboxSpan["Outbox Dispatcher Span"]
-    OutboxSpan --> TekgoWebhook["tekgo-ui /api/revalidate Span"]
-```
+    subgraph Capture["Asset Ingestion"]
+        MobileCapture["Mobile: Camera/Gallery (expo-image-picker)"]
+        WebDrop["Console: Drag-and-Drop Dropzone"]
+    end
 
-1. **W3C Trace Context Standard**:
-   - Format: `traceparent: {version}-{traceId}-{parentId}-{traceFlags}`.
-   - All client SDKs (`@unipost/client`) automatically generate and forward W3C trace headers.
-2. **Mapped Diagnostic Context (MDC)**:
-   - Every log line in `@unipost/backend` automatically includes:
-     `[trace_id=%X{traceId}] [tenant_id=%X{tenantId}] [user_id=%X{userId}] [workspace_id=%X{workspaceId}]`.
-3. **OpenTelemetry Exporters**: Metrics (p95 latency, error rates, GC pauses, cache hits) and traces stream to Grafana / Jaeger / Datadog.
+    subgraph Storage["unipost-ms-fs Storage Service"]
+        Optimizer["Image Transcoder (WebP/AVIF Resize)"]
+        ObjectStore["S3 / MinIO / PostgreSQL Large Objects"]
+        RecordLink["UNIPOST_ENTITY_RECORDS (type: media_asset)"]
+    end
+
+    subgraph Delivery["Public CDN & Edge Delivery"]
+        NextImage["Next.js <Image /> (tekgo-ui)"]
+        NativeFastImage["React Native Image (mobile-ui)"]
+    end
+
+    MobileCapture --> Optimizer
+    WebDrop --> Optimizer
+    Optimizer --> ObjectStore
+    ObjectStore --> RecordLink
+    RecordLink --> NextImage
+    RecordLink --> NativeFastImage
+```
 
 ---
 
-## 8. Multi-Platform Liquid Glass Token Engine & WCAG 2.2 AA Parity
-
-The mandatory monorepo visual standard—**Liquid Glass**—must be mathematically specified across all platforms to eliminate visual drift:
+## 9. Multi-Platform Liquid Glass Token Engine & WCAG 2.2 AA Parity
 
 ```typescript
 // Proposed: packages/tokens/src/glass.ts
@@ -372,7 +570,7 @@ export const LiquidGlassTokens = {
 
 ---
 
-## 9. Monorepo Shared Package Topology (`packages/*`)
+## 10. Monorepo Shared Package Topology (`packages/*`)
 
 ```
 packages/
@@ -399,9 +597,7 @@ packages/
 
 ---
 
-## 10. Granular Deep-Dive Implementation Roadmap (15 Phases)
-
-To eliminate big-bang delivery risks, cognitive overload, and inter-team blocking, the architecture is partitioned into **15 discrete, testable, and incrementally shippable phases**:
+## 11. Granular Deep-Dive Implementation Roadmap (15 Phases)
 
 ```mermaid
 graph TD
@@ -436,11 +632,7 @@ graph TD
   - Route all Blueprint and Billing queries through `springApiClient`.
   - Add request interceptor in `spring-auth/api-client.ts` injecting `X-Tenant-Id` and `X-Workspace-Id` from `useMetadataUiStore.getState()`.
   - Standardize response unwrapping: `unwrapResponse(data) => data?.body ?? data?.data ?? data`.
-- **Pre-requisites:** None.
-- **Verification Gates:**
-  - `pnpm --filter @unipost/console test` passes (91/91 tests).
-  - Grep verification confirms zero occurrences of `import axios from 'axios'` in `features/metadata/api/`.
-- **Rollback Strategy:** Revert commit; standard git checkout.
+- **Verification Gates:** `pnpm --filter @unipost/console test` passes (91/91 tests); zero `import axios from 'axios'` in `features/metadata/api/`.
 
 ---
 
@@ -452,11 +644,7 @@ graph TD
 - **Technical Design:**
   - Universal `UnipostClient` relying on standard `fetch` with W3C `traceparent` generator.
   - Export domain interfaces: `EntityType`, `AttributeDefinition`, `EntityRecord`, `BlueprintManifest`, `TenantBillingSummary`, `CheckoutResponse`, `ProblemDetail`.
-  - Include 401 silent refresh callback and request interceptor hooks.
-- **Pre-requisites:** Phase 1 complete.
-- **Verification Gates:**
-  - `pnpm --filter @unipost/client test` passes with 100% coverage on request encoding, traceparent generation, and error mapping.
-  - `@unipost/console` builds cleanly (`tsc -b`) importing DTOs from `@unipost/client`.
+- **Verification Gates:** `pnpm --filter @unipost/client test` passes with 100% coverage; Console builds cleanly (`tsc -b`).
 
 ---
 
@@ -467,17 +655,13 @@ graph TD
   - Move core logic from `apps/console/src/core/sandbox/`
 - **Technical Design:**
   - Export `SandboxRegistry`, `createSandboxHandler`, `SandboxRouteHandler`.
-  - Implement both `AxiosSandboxAdapter` (for Console) and `FetchSandboxAdapter` (for React Native and Next.js).
-  - Port built-in domain handlers: Auth, Metadata, Users, Tasks, Billing.
-- **Pre-requisites:** Phase 2 complete.
-- **Verification Gates:**
-  - `@unipost/console` sandbox tests pass using the extracted `@unipost/sandbox` package.
-  - Zero behavioral regressions in Console Architect Studio and Operator View.
+  - Implement both `AxiosSandboxAdapter` (Console) and `FetchSandboxAdapter` (Mobile & Tekgo).
+- **Verification Gates:** Console sandbox tests pass using extracted package with zero regressions.
 
 ---
 
 ### Phase 4: `mobile-ui` Sandbox Integration & Context Store
-- **Objective:** Bring `mobile-ui` into 100% compliance with [`.agents/rules/02-unified-sandbox.md`](file:///c:/Users/Admin/workspace/git/unipost/.agents/rules/02-unified-sandbox.md).
+- **Objective:** Bring `mobile-ui` into 100% compliance with `.agents/rules/02-unified-sandbox.md`.
 - **Affected Files:**
   - Delete `apps/mobile-ui/src/constants/mockData.ts`
   - Refactor `apps/mobile-ui/src/store/usePostStore.ts`
@@ -485,11 +669,7 @@ graph TD
 - **Technical Design:**
   - In `apps/mobile-ui/src/navigation/RootNavigator.tsx`, initialize `attachSandboxFetchInterceptor()`.
   - Replace hardcoded post mutations with `unipostClient.request('/v1/metadata/records?entityType=post')`.
-  - Wire pull-to-refresh to fetch directly from sandbox-intercepted client.
-- **Pre-requisites:** Phase 3 complete.
-- **Verification Gates:**
-  - `pnpm --filter mobile-ui start` boots; Dashboard displays feed loaded from Sandbox Metadata Handler.
-  - Zero references to `mockData.ts` remain in `apps/mobile-ui`.
+- **Verification Gates:** `mobile-ui` displays feed from Sandbox handler; stateful reset functions; zero rogue mocks.
 
 ---
 
@@ -503,10 +683,7 @@ graph TD
   - Maps `CompiledSchema` properties to React Native inputs with Liquid Glass styling.
   - Integrates `expo-image-picker` with client-side JPEG/WebP compression (max 1920px, 85% quality).
   - Streams binary to `unipost-ms-fs` via `/fs/objects/upload`, returns immutable content URI.
-- **Pre-requisites:** Phase 4 complete.
-- **Verification Gates:**
-  - Creating a record dynamically renders input fields conforming to entity's JSONSchema.
-  - Selected image uploads to filesystem service and attaches URL to record payload.
+- **Verification Gates:** Dynamic form renders inputs conforming to entity's JSONSchema; selected image uploads and attaches URL.
 
 ---
 
@@ -519,11 +696,7 @@ graph TD
   - Persists pending RFC 6902 mutations in SQLCipher / encrypted AsyncStorage with keys from `Expo.SecureStore`.
   - Attaches `Client-Transaction-Id` and per-mutation idempotency UUIDs.
   - Dispatches sync batches on network reconnect via `NetInfo`.
-  - Renders visual 2-column diff modal on HTTP 409 collisions.
-- **Pre-requisites:** Phase 5 complete.
-- **Verification Gates:**
-  - Airplane mode simulation: edit record -> restart app -> reconnect network -> mutations commit cleanly.
-  - Duplicate dispatch test confirms server processes mutation exactly once.
+- **Verification Gates:** Airplane mode simulation: edit record $\to$ restart $\to$ reconnect $\to$ mutations commit cleanly.
 
 ---
 
@@ -536,11 +709,7 @@ graph TD
   - Generates scoped publishable keys: `pk_live_{tenantSlug}_{hash}`.
   - Exposes `GET /api/v1/public/tenants/{tenantId}/cms/records?entityType=article`.
   - Enforces `WHERE status = 'PUBLISHED' AND deleted_date IS NULL` under tenant RLS.
-  - Enforces Tier 1 rate limiting (100 req/s per IP) and sets `Cache-Control: public, s-maxage=60`.
-- **Pre-requisites:** Phase 2 complete.
-- **Verification Gates:**
-  - Spring Modulith test: public request fetches published articles; accessing draft article returns HTTP 404/403.
-  - Tampered tenant header test: request rejected with HTTP 401.
+- **Verification Gates:** Public request fetches published articles; accessing draft article returns HTTP 404/403.
 
 ---
 
@@ -552,12 +721,8 @@ graph TD
   - Refactor `apps/tekgo-ui/app/blog/page.tsx` & `apps/tekgo-ui/app/blog/[...slug]/page.tsx`
 - **Technical Design:**
   - Dual-mode data toggle: `DATA_SOURCE=cms | local`.
-  - In CMS mode, queries public gateway using Next.js 15 `fetch(..., { next: { tags: ['articles'], revalidate: 60 } })`.
-  - Maps dynamic attributes (`title`, `slug`, `content_body`, `cover_image_url`, `tags`) to Next.js Post layout.
-- **Pre-requisites:** Phase 7 complete.
-- **Verification Gates:**
-  - Next.js production build (`pnpm --filter tekgo-ui build`) succeeds with SSG/ISR page generation.
-  - Setting `DATA_SOURCE=local` seamlessly falls back to local markdown archives.
+  - Queries public gateway using Next.js 15 `fetch(..., { next: { tags: ['articles'], revalidate: 60 } })`.
+- **Verification Gates:** Next.js build succeeds with live/mock CMS articles; fallback works in local mode.
 
 ---
 
@@ -567,12 +732,9 @@ graph TD
   - `apps/backend/unipost-ms-worker/src/main/java/com/unipost/worker/service/WebhookDeliveryService.java`
   - Create `apps/tekgo-ui/app/api/revalidate/route.ts`
 - **Technical Design:**
-  - `unipost-ms-worker` delivers outbound webhook with `x-unipost-signature: HMAC-SHA256(secret, timestamp + "." + body)`.
-  - `tekgo-ui` validates signature, rejects requests older than 300s, and invokes `revalidatePath('/blog/[...slug]')` and `revalidateTag('articles')`.
-- **Pre-requisites:** Phase 8 complete.
-- **Verification Gates:**
-  - Publishing an article in Console/Mobile triggers webhook; Next.js invalidates cache within 500ms.
-  - Replay attack test (timestamp > 300s) rejected with HTTP 401.
+  - Outbound webhook with `x-unipost-signature: HMAC-SHA256(secret, timestamp + "." + body)`.
+  - `tekgo-ui` validates signature, rejects requests older than 300s, and invokes `revalidatePath('/blog/[...slug]')`.
+- **Verification Gates:** Publishing in Console/Mobile triggers webhook; Next.js invalidates cache within 500ms.
 
 ---
 
@@ -584,12 +746,8 @@ graph TD
 - **Technical Design:**
   - Adds integer `version` and `updated_date` columns to `UNIPOST_ENTITY_RECORDS`.
   - In `updateEntityRecord()`, checks `WHERE id = :id AND version = :expectedVersion`.
-  - If outdated, computes three-way JSON diff. If non-overlapping, auto-commits `version + 1` with header `X-Merge-Status: auto-resolved`.
-  - If true collision occurs, throws `OptimisticLockingException` returning HTTP 409 with RFC 6902 delta.
-- **Pre-requisites:** Phase 6 complete.
-- **Verification Gates:**
-  - Concurrency integration test: 20 threads updating disjoint fields of same record all succeed without data loss.
-  - Conflicting edit test returns HTTP 409 with expected conflict payload.
+  - Executes 3-way auto-merge for disjoint attribute mutations; returns HTTP 409 on true field collisions.
+- **Verification Gates:** Concurrency test: 20 threads updating disjoint fields simultaneously all succeed without data loss.
 
 ---
 
@@ -601,28 +759,32 @@ graph TD
   - `apps/backend/unipost-ms-worker/src/main/java/com/unipost/worker/outbox/OutboxPollingJob.java`
 - **Technical Design:**
   - Record mutations and outbox entries committed in the same PostgreSQL transaction.
-  - `unipost-ms-worker` polls `UNIPOST_EVENT_OUTBOX` using `SELECT ... FOR UPDATE SKIP LOCKED`.
-  - Implements exponential backoff retry ($2^n \times 500\text{ms}$) and Dead Letter Queue (DLQ).
-- **Pre-requisites:** Phase 9 and Phase 10 complete.
-- **Verification Gates:**
-  - Integration test simulating network outage during webhook dispatch: worker retries until recovery with zero dropped events.
+  - `unipost-ms-worker` polls `UNIPOST_EVENT_OUTBOX` using `SELECT ... FOR UPDATE SKIP LOCKED` with backoff and DLQ.
+- **Verification Gates:** Network outage simulation: worker retries until recovery with zero dropped events.
 
 ---
 
-### Phase 12: Declarative FSM State Machine & Action Bars
-- **Objective:** Enforce business lifecycle rules across Web and Mobile.
+### Phase 12: Declarative FSM State Machine & Action Bars (Track 2 Integration)
+- **Objective:** Implement complete metadata-driven state machine lifecycle enforcement across Backend, Console, and Mobile.
 - **Affected Files:**
-  - `apps/backend/unipost-fw/src/main/java/com/unipost/fsm/EntityLifecycleEngine.java`
+  - `apps/backend/unipost-fw/src/main/java/com/unipost/domain/metadata/LifecycleConfig.java`
+  - `apps/backend/unipost-fw/src/main/java/com/unipost/domain/metadata/TransitionConfig.java`
+  - `apps/backend/unipost-fw/src/main/java/com/unipost/domain/metadata/EntityStateChangedEvent.java`
+  - `apps/backend/unipost-fw/src/main/java/com/unipost/service/workflow/EntityLifecycleService.java`
+  - `apps/backend/unipost-fw/src/main/java/com/unipost/service/workflow/SpelGuardEvaluator.java`
+  - `apps/backend/unipost-fw/src/main/java/com/unipost/service/workflow/GuardEvaluatorStrategy.java`
+  - `apps/backend/unipost-fw/src/main/java/com/unipost/presentation/MetadataController.java`
   - Create `apps/mobile-ui/src/components/lifecycle/RecordLifecycleActionBar.tsx`
   - `apps/console/src/features/metadata/components/designer/LifecycleWorkflowEditor.tsx`
 - **Technical Design:**
-  - Stores `lifecycle_config` in `UNIPOST_ENTITY_TYPES` with states, transitions, required fields, and CEL guards.
-  - Exposes `POST /v1/metadata/records/{id}/transitions/{action}`.
-  - Mobile renders one-tap transition buttons; Console renders visual workflow editor.
-- **Pre-requisites:** Phase 11 complete.
+  - Stores `lifecycle_config` in `UNIPOST_ENTITY_TYPES` (JSONB) defining states, initial state, transitions, and CEL/SpEL guards.
+  - Evaluates 5-Gate validation pipeline before mutation.
+  - Exposes `POST /api/v1/metadata/records/{id}/transition?action={action}`.
+  - Mobile renders `<RecordLifecycleActionBar />`; Console renders visual workflow editor.
+  - Publishes `EntityStateChangedEvent` to Transactional Outbox for asynchronous audit and webhook sagas.
 - **Verification Gates:**
   - Transition without required fields or unauthorized role rejected with HTTP 422.
-  - Successful transition fires `RecordStateChangedEvent` into Transactional Outbox.
+  - Successful transition fires `RecordStateChangedEvent`; Tekgo webhook triggers cache revalidation.
 
 ---
 
@@ -634,12 +796,8 @@ graph TD
   - Wire `@unipost/i18n` into `mobile-ui` (`react-i18next`)
 - **Technical Design:**
   - Centralizes OKLCH color palettes, specular borders, and blur intensities (8, 16, 24, 32px).
-  - Exports Tailwind v4 `@theme` tokens and React Native StyleSheet constants.
   - Enforces minimum 65% scrim opacity behind body text.
-- **Pre-requisites:** Phase 5 complete.
-- **Verification Gates:**
-  - Automated contrast audit verifies all frosted cards achieve contrast $\ge 4.5:1$.
-  - Language switching in mobile settings updates UI immediately via `@unipost/i18n`.
+- **Verification Gates:** Automated contrast audit verifies all frosted cards achieve contrast $\ge 4.5:1$.
 
 ---
 
@@ -649,233 +807,81 @@ graph TD
 - **Technical Design:**
   - Enforces W3C `traceparent` propagation across Mobile $\to$ Console $\to$ Gateway $\to$ Modulith $\to$ Outbox $\to$ Tekgo.
   - Standardizes MDC logging: `[trace_id] [tenant_id] [user_id] [workspace_id]`.
-  - Runs full automated regression test suites across Java 21, Vite 8, React Native, and Next.js 15.
-- **Pre-requisites:** Phases 1 through 13 complete.
-- **Verification Gates:**
-  - Single synthetic transaction traced end-to-end in OpenTelemetry Jaeger/Grafana.
-  - Build, lint, and test pipelines pass with zero warnings across all monorepo targets.
+- **Verification Gates:** Single synthetic transaction traced end-to-end in OpenTelemetry Jaeger/Grafana.
 
 ---
 
 ### Phase 15: Full-Spectrum Multi-Tier Testing Matrix & Automation Framework
-- **Objective:** Establish an exhaustive, multi-tiered enterprise testing framework guaranteeing zero regressions, multi-tenant isolation, contract compatibility, and automated cross-client E2E verification across `@unipost/backend`, `@unipost/console`, `mobile-ui`, and `tekgo-ui`.
-- **Target Scope:** Monorepo-wide (`apps/*`, `packages/*`, and CI/CD pipelines).
+- **Objective:** Exhaustive multi-tier testing framework guaranteeing zero regressions, multi-tenant isolation, contract compatibility, and automated cross-client E2E verification.
+- **Affected Scope:** Monorepo-wide (`apps/*`, `packages/*`, and CI/CD pipelines).
 
-#### 1. Multi-Tier Testing Pyramid Architecture
-
-```mermaid
-flowchart TD
-    subgraph L5["L5: Non-Functional & SRE Chaos (5%)"]
-        SecurityFuzz["Multi-Tenant RLS Leak Fuzzing"]
-        Chaos["Toxiproxy Network / DB Partitions"]
-        Perf["k6 / Gatling Load & Stress Tests"]
-        A11y["@axe-core/playwright WCAG 2.2 AA"]
-    end
-
-    subgraph L4["L4: Cross-Tier End-to-End Automation (15%)"]
-        PlaywrightWeb["Playwright E2E: Console & Tekgo"]
-        MaestroNative["Maestro Native E2E: mobile-ui"]
-        GoldenFlows["Cross-Client Closed-Loop Workflows"]
-    end
-
-    subgraph L3["L3: Contract & Schema Drift Tests (15%)"]
-        Pact["Pact / OpenAPI Spec Compatibility"]
-        SchemaDrift["JSON Schema Draft-07 Drift Tests"]
-        TypeSync["tsc --noEmit Monorepo Integrity"]
-    end
-
-    subgraph L2["L2: Slicing & Boundary Integration (25%)"]
-        ModulithTest["Spring Modulith @ApplicationModuleTest"]
-        Testcontainers["Testcontainers PostgreSQL with RLS"]
-        SandboxFlows["@unipost/sandbox Full Flow Tests"]
-        OutboxSyncTest["Offline Outbox Reconnect Sync Tests"]
-    end
-
-    subgraph L1["L1: Fast Unit & Component Isolation (40%)"]
-        BackendUnit["JUnit 5 + Mockito + AssertJ"]
-        WebUnit["Vitest + React Testing Library"]
-        MobileUnit["Jest + React Native Testing Library"]
-        TokenMath["Liquid Glass Contrast & Blur Math Tests"]
-    end
-
-    L1 --> L2
-    L2 --> L3
-    L3 --> L4
-    L4 --> L5
-```
+#### Key Deliverables:
+1. **L1 Unit Slice (`< 20ms`)**: Pure algorithm tests (3-way auto-merge, XFetch math, CEL guard evaluator, token-bucket rate limiter).
+2. **L2 Spring Modulith & Database Slices**: `@ApplicationModuleTest` boundary verification and PostgreSQL Testcontainers with RLS (`SET LOCAL app.current_tenant_id`).
+3. **L3 Contract Tests**: Pact / OpenAPI Schema compatibility tests between `@unipost/client` and Spring Jackson models.
+4. **L4 The 4 Golden Cross-Tier E2E Workflows**:
+   - Golden Flow 1: Headless CMS End-to-End Closed-Loop Publishing Pipeline.
+   - Golden Flow 2: Multi-Tenant Zero-Trust Penetration Fuzzing across 40+ endpoints.
+   - Golden Flow 3: FinOps payOS VietQR Checkout & Dynamic Feature Gating.
+   - Golden Flow 4: High-Concurrency 3-Way Auto-Merge under race conditions.
+5. **L5 Non-Functional SRE & Chaos**: Toxiproxy network cut simulations, 50ms ReDoS fuzzing, and `@axe-core/playwright` automated WCAG 2.2 AA contrast scans.
+- **Verification Gates:** `pnpm turbo run test` passes across all workspace packages; `mvnw test` passes; 0 Axe accessibility violations.
 
 ---
 
-#### 2. Backend Testing Architecture (`@unipost/backend`)
+## 12. Enterprise Transformation Synthesis & Architectural Cross-Pollination
 
-The Spring Modulith backend enforces four distinct testing slices:
+Synthesizing the foundational enterprise directives from `docs/enterprise_transformation_blueprint.md`:
 
-1. **Pure Unit Tests (JUnit 5 + Mockito + AssertJ)**:
-   - Target: `unipost-core`, `unipost-fw`.
-   - Execution Time: `< 20ms` per test, zero I/O, zero Spring Context.
-   - Test Cases:
-     - 3-Way Auto-Merge JSON algorithm: verifies non-overlapping field merge vs overlapping conflict detection.
-     - XFetch probabilistic early expiration math: verifies recalculation window across random seeds.
-     - Google CEL transition guard evaluator: asserts syntax validation, role checking, and rule evaluations.
-     - Token bucket rate limiter: asserts burst replenishment and token consumption math.
-2. **Spring Modulith Architectural & Scenario Tests (`@ApplicationModuleTest`)**:
-   - Target: `unipost-fw`, `unipost-ms-identity`, `unipost-ms-worker`.
-   - Verifies module encapsulation: fails compilation if internal packages of `unipost-ms-identity` are accessed directly by `unipost-fw` without public interfaces.
-   - Scenario Tests: `Scenario.create(...)` verifies asynchronous domain event emissions (`RecordStateChangedEvent`, `TenantProvisionedEvent`).
-3. **Database Integration & RLS Slicing (Testcontainers PostgreSQL 16)**:
-   - Target: `unipost-db`, `unipost-fw`.
-   - Runs against an ephemeral, real PostgreSQL container with Row-Level Security policies active.
-   - Test Cases:
-     - Multi-Tenant Isolation: Executes `SET LOCAL app.current_tenant_id = 'tenant_A'`. Asserts that `SELECT * FROM UNIPOST_ENTITY_RECORDS` returns **zero rows** belonging to `tenant_B`.
-     - Optimistic Concurrency Control (OCC): Launches 20 concurrent threads attempting to update the same record. Asserts that disjoint updates successfully auto-merge while conflicting updates throw `OptimisticLockingException` returning HTTP 409.
-     - Partial Unique Indexes: Asserts that duplicate system names are rejected when `deleted_date IS NULL`, but allowed when previously soft-deleted.
-4. **Cache Coherence & Distributed Mutex Tests**:
-   - Target: Hazelcast / Redis cluster slice.
-   - Cache Stampede Simulation: 50 concurrent virtual threads requesting an uncached entity schema simultaneously. Asserts Hazelcast `FencedLock` ensures exactly **1 database compilation query** occurs; all 49 other threads receive the warmed result from cache.
+### 12.1 Frontend Facade & Mediator Governance
+1. **Strict Prohibition of Direct Component-to-Network Calls**: UI components (views, cards, modals) must **never** directly invoke `fetch`, `axios`, or raw endpoint URLs.
+2. **The Facade Pattern (TanStack Query Hooks)**: All network operations must pass through strongly typed Facades (`useEntityRecordQuery`, `useProvisionBlueprintMutation`, `useTenantBillingQuery`).
+3. **The Mediator Pattern (Zustand Granular Selectors)**: UI components must use atomic selectors (`useMetadataUiStore(s => s.activeTenantId)`) to eliminate unnecessary render cascades.
 
 ---
 
-#### 3. Frontend Testing Architecture across Clients
-
-```
-apps/
-├── console/ (Web & Desktop)
-│   ├── Unit / Hook: Vitest + @testing-library/react (useTenantBilling, useBlueprints, etc.)
-│   ├── Component: Radix & Liquid Glass UI states, accessibility roles, aria landmarks
-│   ├── Integration: Unified Sandbox mock engine flow tests
-│   └── E2E: Playwright (Chromium, Firefox, WebKit, Electrobun Desktop)
-├── mobile-ui/ (Mobile Operator Companion)
-│   ├── Unit: Jest + @testing-library/react-native (useOutboxStore, DynamicFieldRenderer)
-│   ├── Integration: FetchSandboxAdapter simulation (offline outbox -> sync reconnect)
-│   └── Native E2E: Maestro UI automation (navigation, image picker, pull-to-refresh)
-└── tekgo-ui/ (Specialized Public Blog Website)
-    ├── Unit: Vitest (Next.js App Router helpers, metadata tags, reading time)
-    ├── Integration: Route Handler tests (/api/revalidate signature & replay window)
-    └── E2E: Playwright (SSR/ISR page rendering, SEO OpenGraph, newsletter modal)
-```
-
-1. **`@unipost/console` (React 19 / Vite 8)**:
-   - **Unit & Hook Tests**: Test custom hooks (`useTenantBilling`, `useBlueprints`) with mock query clients; verify RFC 6902 inverse patch calculations.
-   - **Sandbox Integration Tests**: Simulate full user journeys using `@unipost/sandbox`:
-     - *Blueprint Provisioning*: Select Headless CMS $\to$ preview DAG $\to$ click provision $\to$ assert query cache invalidated and sidebar models populated.
-     - *VietQR payOS Checkout*: Click Upgrade to Pro $\to$ modal displays QR $\to$ mock payOS webhook arrives $\to$ UI transitions to "Active Pro" immediately without page reload.
-     - *GDPR Hard-Purge*: Trigger 5-stage purge $\to$ progress bar increments $\to$ cryptographic Certificate of Erasure generated.
-   - **E2E Tests (Playwright)**: Test full responsive viewport scaling (Mobile, Tablet, Bento Grid Desktop) and screen reader landmarks (`role="banner"`, `role="main"`, SkipToMain).
-2. **`mobile-ui` (Expo React Native)**:
-   - **Unit & Store Tests**: Test `useOutboxStore` with mocked SQLCipher storage; verify that offline actions generate valid RFC 6902 patch deltas with unique idempotency keys.
-   - **Dynamic Form Renderer Tests**: Feed arbitrary `CompiledSchema` objects into `<DynamicFieldRenderer />`; assert correct native controls render (`TextInput`, `Switch`, `DatePicker`, `MediaPickerInput`).
-   - **Native E2E Automation (Maestro)**:
-     - Script: Launch app $\to$ switch workspace via bottom sheet $\to$ compose new article with photo $\to$ tap "Submit for Review" $\to$ assert record appears in operator timeline.
-     - Network Partition Script: Toggle network OFF $\to$ create draft $\to$ assert "Saved Offline" glass pill appears $\to$ toggle network ON $\to$ assert automatic background sync flushes without user intervention.
-3. **`tekgo-ui` (Next.js 15 App Router)**:
-   - **Route Handler Tests**:
-     - Deliver invalid HMAC signature $\to$ assert HTTP 401.
-     - Deliver timestamp older than 300s $\to$ assert HTTP 401 Replay Expired.
-     - Deliver valid webhook $\to$ assert Next.js `revalidatePath` and `revalidateTag` invoked.
-   - **E2E Reader Tests (Playwright)**:
-     - Assert static generation of `/blog`, `/blog/[slug]`, and `/tags/[tag]`.
-     - Validate SEO metadata, structured JSON-LD data, and OpenGraph images.
-     - Verify newsletter subscription submission via `/api/newsletter`.
+### 12.2 Open/Closed Principle (OCP) Dynamic Extension Registries
+1. **Domain Blueprint Discovery**: New verticals added via `classpath:metadata/blueprints/*.json` discovered at startup.
+2. **Pluggable Widget Registry (`WidgetRegistry`)**: `packages/ui` and `mobile-ui` expose `WidgetRegistry.set(type, Component)` allowing custom inputs (SignaturePad, GeoMap, BarcodeScanner) without modifying `<DynamicEntityForm />`.
+3. **Runtime AI Agent MCP Tool Synthesis**: The metadata engine dynamically inspects active `UNIPOST_ENTITY_TYPES` and exposes runtime Model Context Protocol (MCP) tool manifests (`unipost_get_schema`, `unipost_query_entities`, `unipost_create_entity`).
 
 ---
 
-#### 4. The 4 Golden Cross-Tier E2E Workflows
-
-To validate true enterprise platform cohesion, four end-to-end automated integration tests span the entire stack:
-
-```mermaid
-sequenceDiagram
-    autonumber
-    actor E2E as Automated E2E Runner (Playwright + Maestro)
-    participant Console as @unipost/console
-    participant Mobile as mobile-ui
-    participant Backend as @unipost/backend
-    participant Outbox as UNIPOST_EVENT_OUTBOX
-    participant Worker as unipost-ms-worker
-    participant Tekgo as tekgo-ui (Blog)
-
-    Note over E2E, Tekgo: Golden Flow 1: Closed-Loop Publishing Pipeline
-    E2E->>Console: 1. Provision "Headless CMS" Blueprint
-    Console->>Backend: POST /v1/metadata/tenants/provision
-    Backend-->>Console: 200 OK (article schema created)
-    
-    E2E->>Mobile: 2. Create article "Enterprise Architecture" + attach photo
-    Mobile->>Backend: POST /v1/metadata/records (DRAFT)
-    E2E->>Mobile: 3. Tap "Publish Now" Action Button
-    Mobile->>Backend: POST /v1/metadata/records/{id}/transitions/PUBLISH
-    Backend->>Outbox: Commit state PUBLISHED + Outbox Event in 1 ACID Tx
-    Backend-->>Mobile: 200 OK
-    
-    Worker->>Outbox: Polls Outbox via SELECT ... FOR UPDATE SKIP LOCKED
-    Worker->>Tekgo: POST /api/revalidate (HMAC signature + slug)
-    Tekgo->>Tekgo: Next.js revalidates edge cache
-    
-    E2E->>Tekgo: 4. Navigate to /blog/enterprise-architecture
-    Tekgo-->>E2E: 200 OK (Article HTML renders with full Liquid Glass styling)
-```
-
-1. **Golden Flow 1: Closed-Loop Headless CMS Publishing Pipeline**:
-   - Console provisions blueprint $\to$ Mobile operator composes and publishes $\to$ Backend ACID transaction writes record and Transactional Outbox $\to$ Outbox worker delivers HMAC webhook $\to$ Tekgo edge invalidates $\to$ Playwright confirms reader sees live post within 1 second.
-2. **Golden Flow 2: Multi-Tenant Zero-Trust Penetration Fuzzing**:
-   - Automated security scanner iterates across all 40+ REST endpoints. Using a JWT signed for `tenant_alpha`, attempts to read, insert, update, or purge records belonging to `tenant_beta` (passing tampered headers, path parameters, and query parameters).
-   - Assertion: **100% of unauthorized attempts must be rejected with HTTP 403 or HTTP 404**; PostgreSQL RLS must record **0 tenant boundary leaks**.
-3. **Golden Flow 3: FinOps payOS VietQR Checkout & Dynamic Feature Gating**:
-   - Console clicks "Upgrade to Pro" $\to$ Backend generates payOS checkout link $\to$ Test runner injects payOS HMAC webhook callback $\to$ Backend updates `UNIPOST_TENANT_FEATURES` $\to$ Both Console and Mobile unlock `<FeatureGate feature="ANALYTICS_EXPORT" />` dynamically without session termination.
-4. **Golden Flow 4: High-Concurrency 3-Way Auto-Merge**:
-   - Concurrently launches 2 automated workers modifying the same record: Worker 1 (Web) updates `attributes.title`; Worker 2 (Mobile) updates `attributes.tags`.
-   - Both submit with `version: 1`.
-   - Backend detects disjoint changes, auto-merges into unified state, and commits `version: 2`. Both clients receive HTTP 200 with merged attributes and zero data loss.
+### 12.3 Spring Modulith Dynamic Dispatch via `ResolvableType`
+In `@unipost/backend`, generic CQRS command handlers resolve target types using `org.springframework.core.ResolvableType` rather than raw reflection, preventing CGLIB proxy breakages on Spring `@Transactional` beans.
 
 ---
 
-#### 5. Non-Functional, Chaos & Accessibility Testing
-
-1. **Chaos Engineering & Resilience Tests (Toxiproxy)**:
-   - **PostgreSQL Latency Spike**: Inject 2000ms latency into the database proxy. Assert statement timeout (`3000ms`) and connection semaphores trigger clean HTTP 429/503 responses without thread pool exhaustion.
-   - **Network Partition during Outbox Dispatch**: Sever network connection between `unipost-ms-worker` and `tekgo-ui` during webhook delivery. Assert event remains in `UNIPOST_EVENT_OUTBOX`; when network heals, worker delivers with exponential backoff and zero event drops.
-2. **Pathological ReDoS Fuzzing**:
-   - Fuzz tester generates evil regular expressions (e.g. `(a+)+$`, `(a|aa)+$`) and submits them via `CreateAttributeDefinitionDto`.
-   - Assert server's `InterruptibleCharSequence` terminates evaluation at **50ms**, returning HTTP 422 with `ProblemDetail` indicating regex evaluation timeout.
-3. **Automated Accessibility & Contrast Auditing (WCAG 2.2 AA)**:
-   - Playwright test runs `@axe-core/playwright` across every route in `@unipost/console` and `tekgo-ui`.
-   - Assert:
-     - Zero contrast violations ($\ge 4.5:1$ for normal text, $\ge 3:1$ for large text).
-     - Strict heading hierarchy ($h1 \to h2 \to h3$).
-     - Minimum target touch size $\ge 24 \times 24\text{px}$ (WCAG SC 2.5.8).
-     - Screen reader landmarks (`role="banner"`, `role="main"`, SkipToMain bypass block).
+### 12.4 End-to-End Regulatory Compliance Pipelines (GDPR Art. 17 & Art. 20)
+1. **Article 20 (Streaming Export)**: Non-blocking streaming ZIP pipeline streaming JSON/CSV records directly to client HTTP streams without JVM heap accumulation.
+2. **Article 17 (Right to be Forgotten 5-Stage Purge)**: Soft-Delete Flagging $\to$ Dependency Graph Cascade $\to$ RLS Table Wipe $\to$ Cache Shredding $\to$ Cryptographic Certificate of Erasure Generation.
+3. **Consumer Privacy (`tekgo-ui`)**: Self-service newsletter unsubscribe/purge executing verified erasure of subscriber PII.
 
 ---
 
-#### 6. Continuous Integration (CI) Pipeline Architecture
+### 12.5 Target Enterprise Quality KPIs & SLA/SLO Benchmarks
 
-The monorepo uses Turborepo pipelines with aggressive caching and test sharding:
-
-```mermaid
-flowchart LR
-    Commit["git push / PR"] --> FastCheck["Tier 1: Pre-Commit & Fast Checks ( < 2m )<br/>• Linting & Biome/ESLint<br/>• TypeScript Typecheck (tsc -b)<br/>• Unit Tests (Vitest & JUnit 5)"]
-    
-    FastCheck --> SliceTest["Tier 2: Boundary & Integration ( < 5m )<br/>• Spring Modulith Tests<br/>• Testcontainers Postgres RLS<br/>• Unified Sandbox Mock Flows"]
-    
-    SliceTest --> E2ETest["Tier 3: Full E2E & Golden Flows ( < 10m )<br/>• Playwright Web & Tekgo E2E<br/>• Maestro Mobile E2E<br/>• 4 Golden Cross-Tier Workflows"]
-    
-    E2ETest --> SRETest["Tier 4: Nightly SRE & Chaos (Scheduled)<br/>• Toxiproxy Network Partitions<br/>• Multi-Tenant Penetration Fuzzing<br/>• k6 Distributed Load Test"]
-```
-
-- **Pre-requisites:** Phases 1 through 14 complete.
-- **Verification Gates:**
-  - `pnpm turbo run test` passes across all workspace packages with zero failures.
-  - `mvnw test -Dtest="*Test"` passes across all Spring backend modules.
-  - E2E Playwright test suite passes with 100% assertions green on Chromium, Firefox, and WebKit.
-  - Automated WCAG 2.2 AA audit passes with 0 violations.
-- **Rollback Strategy:** Isolated feature flags and semantic release branching.
+| Metric / Dimension | Enterprise Target | Verification Mechanism |
+| :--- | :--- | :--- |
+| **Tenant Data Leakage** | **`0` breaches** | Automated cross-tenant penetration fuzzing across 40+ endpoints. |
+| **Schema Resolution Latency** | **`< 1ms`** (L1 Cache) / **`< 10ms`** (L2 Redis) | Hazelcast JMH microbenchmarks & Spring Actuator metrics. |
+| **ReDoS Defense Abort** | **`<= 50ms`** CPU bound | Pathological regex fuzzing using `TimeoutCharSequence`. |
+| **Noisy Neighbor Ingress** | **`HTTP 429`** with `Retry-After` | Bucket4j token-bucket burst testing. |
+| **Database Statement Safety** | **`3000ms`** hard statement timeout | `SET LOCAL statement_timeout = 3000` session aspect assertion. |
+| **Accessibility Compliance** | **`100%`** WCAG 2.2 AA pass rate | `@axe-core/playwright` automated scans on all rendered routes. |
+| **Minimum Touch Target** | **`>= 24x24px`** (WCAG SC 2.5.8) | Automated CSS bounding-box assertions in Console and Tekgo. |
+| **GDPR Memory Safety** | **Zero OOM** on multi-GB exports | Streaming ZIP pipeline integration tests with 512MB heap cap. |
 
 ---
 
-## 11. Architectural Invariants Checklist
+## 13. Architectural Invariants Checklist
 
 Before any pull request is merged into `main`, it must satisfy these non-negotiable invariants:
 
 - [ ] **RLS Invariant**: Every SQL query must execute within an active `TenantContext` bounded by PostgreSQL Row-Level Security.
+- [ ] **FSM Invariant**: Record lifecycle state changes must execute via `EntityLifecycleService` and satisfy all 5 validation gates.
+- [ ] **Facade Invariant**: No direct `fetch`/`axios` calls inside UI components; all data access must route through typed Facade hooks.
+- [ ] **Selector Invariant**: Zustand subscriptions must use granular atomic selectors (`useStore(s => s.prop)`).
 - [ ] **Idempotency Invariant**: All background jobs, outbox dispatches, and mobile mutations must provide unique idempotency keys.
 - [ ] **Zero-Rogue-Mock Invariant**: No mock data arrays embedded in UI components or tests; all simulation must route through `SandboxRegistry`.
 - [ ] **Traceability Invariant**: Every outgoing client request must include standard `traceparent` headers.

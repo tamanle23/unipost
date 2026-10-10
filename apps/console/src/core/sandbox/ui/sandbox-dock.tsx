@@ -20,6 +20,7 @@ import { sandboxManager } from '../manager/sandbox-manager';
 import { mockMetadataStore } from '@/features/metadata/data/mock-metadata';
 import { usersSandboxRepo } from '../handlers/users-sandbox-handler';
 import { tasksSandboxRepo } from '../handlers/tasks-sandbox-handler';
+import { mockFleetStore } from '../handlers/system-sandbox-handler';
 import { useSpringAuthStore, springApiClient } from '@/features/spring-auth';
 import type { SandboxPersonaId } from '../types';
 
@@ -79,6 +80,7 @@ export function SandboxDock() {
     mockMetadataStore.resetToInitialState();
     usersSandboxRepo.reset();
     tasksSandboxRepo.reset();
+    mockFleetStore.reset();
     sandboxManager.syncPersonaAuthTokens(activePersonaId);
     toast.success('Unified Sandbox: Reset all domain records to pristine baseline');
   };

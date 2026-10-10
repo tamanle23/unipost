@@ -44,6 +44,38 @@ class TenantContextAndAspectTest {
         tenantSessionAspect.setPostgresTenantSession();
 
         verify(jdbcTemplate, times(1)).execute("SET LOCAL app.current_tenant_id = 'tenant-acme'");
+        verify(jdbcTemplate, times(1)).execute("SET LOCAL app.is_system_custodian = 'false'");
+        verify(jdbcTemplate, times(1)).execute("SET LOCAL statement_timeout = '3000ms'");
+    }
+
+    @Test
+    void testTenantSessionAspectSetsSystemCustodianWhenSystemActor() {
+        TenantContextHolder.setDualContext("tenant-acme", "SYSTEM");
+
+        assertTrue(TenantContextHolder.isImpersonating());
+        assertTrue(TenantContextHolder.isSovereignActor());
+        assertEquals("tenant-acme", TenantContextHolder.getTenantId());
+        assertEquals("SYSTEM", TenantContextHolder.getActorTenantId());
+
+        tenantSessionAspect.setPostgresTenantSession();
+
+        verify(jdbcTemplate, times(1)).execute("SET LOCAL app.current_tenant_id = 'tenant-acme'");
+        verify(jdbcTemplate, times(1)).execute("SET LOCAL app.is_system_custodian = 'true'");
+        verify(jdbcTemplate, times(1)).execute("SET LOCAL statement_timeout = '3000ms'");
+    }
+
+    @Test
+    void testTenantSessionAspectSetsSystemCustodianWhenDirectSystemTenant() {
+        TenantContextHolder.setTenantId("SYSTEM");
+
+        assertFalse(TenantContextHolder.isImpersonating());
+        assertTrue(TenantContextHolder.isSovereignActor());
+        assertEquals("SYSTEM", TenantContextHolder.getTenantId());
+
+        tenantSessionAspect.setPostgresTenantSession();
+
+        verify(jdbcTemplate, times(1)).execute("SET LOCAL app.current_tenant_id = 'SYSTEM'");
+        verify(jdbcTemplate, times(1)).execute("SET LOCAL app.is_system_custodian = 'true'");
     }
 
     @Test

@@ -1,0 +1,124 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+  xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+  xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+                      http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-3.4.xsd">
+
+    <changeSet id="sovereign-custodian-rls-fix-07" author="antigravity">
+        <comment>Fix PostgreSQL RLS Write Paradox for SYSTEM Sovereign Custodian on metadata and data planes</comment>
+
+        <sql dbms="postgresql">
+            -- 1. Metadata Schema Entity Types Policy
+            DROP POLICY IF EXISTS tenant_isolation_entity_types ON UNIPOST_ENTITY_TYPES;
+            CREATE POLICY tenant_isolation_entity_types ON UNIPOST_ENTITY_TYPES
+                FOR ALL
+                USING (
+                    current_setting('app.current_tenant_id', true) = 'SYSTEM'
+                    OR tenant_id = NULLIF(current_setting('app.current_tenant_id', true), '')
+                    OR tenant_id = 'SYSTEM'
+                )
+                WITH CHECK (
+                    current_setting('app.current_tenant_id', true) = 'SYSTEM'
+                    OR (
+                        tenant_id = NULLIF(current_setting('app.current_tenant_id', true), '')
+                        AND tenant_id != 'SYSTEM'
+                    )
+                );
+
+            -- 2. Metadata Attribute Definitions Policy
+            DROP POLICY IF EXISTS tenant_isolation_attribute_defs ON UNIPOST_ATTRIBUTE_DEFINITIONS;
+            CREATE POLICY tenant_isolation_attribute_defs ON UNIPOST_ATTRIBUTE_DEFINITIONS
+                FOR ALL
+                USING (
+                    current_setting('app.current_tenant_id', true) = 'SYSTEM'
+                    OR tenant_id = NULLIF(current_setting('app.current_tenant_id', true), '')
+                    OR tenant_id = 'SYSTEM'
+                )
+                WITH CHECK (
+                    current_setting('app.current_tenant_id', true) = 'SYSTEM'
+                    OR (
+                        tenant_id = NULLIF(current_setting('app.current_tenant_id', true), '')
+                        AND tenant_id != 'SYSTEM'
+                    )
+                );
+
+            -- 3. Metadata Relationship Types Policy
+            DROP POLICY IF EXISTS tenant_isolation_rel_types ON UNIPOST_RELATIONSHIP_TYPES;
+            CREATE POLICY tenant_isolation_rel_types ON UNIPOST_RELATIONSHIP_TYPES
+                FOR ALL
+                USING (
+                    current_setting('app.current_tenant_id', true) = 'SYSTEM'
+                    OR tenant_id = NULLIF(current_setting('app.current_tenant_id', true), '')
+                    OR tenant_id = 'SYSTEM'
+                )
+                WITH CHECK (
+                    current_setting('app.current_tenant_id', true) = 'SYSTEM'
+                    OR (
+                        tenant_id = NULLIF(current_setting('app.current_tenant_id', true), '')
+                        AND tenant_id != 'SYSTEM'
+                    )
+                );
+
+            -- 4. Data Plane Entity Records Policy (Permits SYSTEM cross-tenant read & audit)
+            DROP POLICY IF EXISTS tenant_isolation_entities ON UNIPOST_ENTITIES;
+            CREATE POLICY tenant_isolation_entities ON UNIPOST_ENTITIES
+                FOR ALL
+                USING (
+                    current_setting('app.current_tenant_id', true) = 'SYSTEM'
+                    OR tenant_id = NULLIF(current_setting('app.current_tenant_id', true), '')
+                )
+                WITH CHECK (
+                    current_setting('app.current_tenant_id', true) = 'SYSTEM'
+                    OR tenant_id = NULLIF(current_setting('app.current_tenant_id', true), '')
+                );
+
+            -- 5. Data Plane Entity Relationships Policy
+            DROP POLICY IF EXISTS tenant_isolation_entity_rels ON UNIPOST_ENTITY_RELATIONSHIPS;
+            CREATE POLICY tenant_isolation_entity_rels ON UNIPOST_ENTITY_RELATIONSHIPS
+                FOR ALL
+                USING (
+                    current_setting('app.current_tenant_id', true) = 'SYSTEM'
+                    OR tenant_id = NULLIF(current_setting('app.current_tenant_id', true), '')
+                )
+                WITH CHECK (
+                    current_setting('app.current_tenant_id', true) = 'SYSTEM'
+                    OR tenant_id = NULLIF(current_setting('app.current_tenant_id', true), '')
+                );
+
+            -- 6. Billing & Entitlements Policy (Permits SYSTEM cross-tenant billing overrides)
+            DROP POLICY IF EXISTS tenant_isolation_billing ON UNIPOST_TENANT_BILLING;
+            CREATE POLICY tenant_isolation_billing ON UNIPOST_TENANT_BILLING
+                FOR ALL
+                USING (
+                    current_setting('app.current_tenant_id', true) = 'SYSTEM'
+                    OR tenant_id = NULLIF(current_setting('app.current_tenant_id', true), '')
+                    OR tenant_id = 'SYSTEM'
+                )
+                WITH CHECK (
+                    current_setting('app.current_tenant_id', true) = 'SYSTEM'
+                    OR (
+                        tenant_id = NULLIF(current_setting('app.current_tenant_id', true), '')
+                        AND tenant_id != 'SYSTEM'
+                    )
+                );
+
+            DROP POLICY IF EXISTS tenant_isolation_features ON UNIPOST_TENANT_FEATURES;
+            CREATE POLICY tenant_isolation_features ON UNIPOST_TENANT_FEATURES
+                FOR ALL
+                USING (
+                    current_setting('app.current_tenant_id', true) = 'SYSTEM'
+                    OR tenant_id = NULLIF(current_setting('app.current_tenant_id', true), '')
+                    OR tenant_id = 'SYSTEM'
+                )
+                WITH CHECK (
+                    current_setting('app.current_tenant_id', true) = 'SYSTEM'
+                    OR (
+                        tenant_id = NULLIF(current_setting('app.current_tenant_id', true), '')
+                        AND tenant_id != 'SYSTEM'
+                    )
+                );
+        </sql>
+    </changeSet>
+
+</databaseChangeLog>

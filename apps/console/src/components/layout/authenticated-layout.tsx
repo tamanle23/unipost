@@ -6,6 +6,7 @@ import { SearchProvider } from '@/context/search-provider'
 import { SidebarInset, SidebarProvider } from '@/components/ui/sidebar'
 import { AppSidebar } from '@/components/layout/app-sidebar'
 import { SkipToMain } from '@/components/skip-to-main'
+import { AssumeTenantBar } from '@/components/layout/assume-tenant-bar'
 
 type AuthenticatedLayoutProps = {
   children?: React.ReactNode
@@ -33,6 +34,7 @@ export function AuthenticatedLayout({ children }: AuthenticatedLayoutProps) {
               'peer-data-[variant=inset]:lg:has-data-[layout=fixed]:h-[calc(100svh-(var(--spacing)*4))]'
             )}
           >
+            <AssumeTenantBar />
             {children ?? <Outlet />}
           </SidebarInset>
         </SidebarProvider>

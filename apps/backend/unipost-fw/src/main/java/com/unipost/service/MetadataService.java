@@ -234,8 +234,10 @@ public class MetadataService {
         AttributeDefinition attr = attributeDefinitionRepository.findByEntityTypeIdAndIdAndDeletedDateIsNull(entityTypeId, attributeId)
                 .orElseThrow(() -> new MetadataNotFoundException("AttributeDefinition not found with id: " + attributeId + " for entityTypeId: " + entityTypeId));
 
-        // System Field Immutability Guard: Tenants cannot mutate system attributes
-        if ("SYSTEM".equalsIgnoreCase(attr.getTenantId())) {
+        // System Field Immutability Guard: Tenants cannot mutate system attributes, but SYSTEM custodian can
+        String callerTenant = com.unipost.fw.tenancy.TenantContextHolder.getTenantId();
+        boolean isSovereign = "SYSTEM".equalsIgnoreCase(callerTenant) || com.unipost.fw.tenancy.TenantContextHolder.isSovereignActor();
+        if ("SYSTEM".equalsIgnoreCase(attr.getTenantId()) && !isSovereign) {
             throw new MetadataConflictException("System attributes (tenant_id = 'SYSTEM') are immutable and cannot be modified by tenant admins");
         }
 
@@ -274,8 +276,10 @@ public class MetadataService {
         AttributeDefinition attr = attributeDefinitionRepository.findByEntityTypeIdAndIdAndDeletedDateIsNull(entityTypeId, attributeId)
                 .orElseThrow(() -> new MetadataNotFoundException("AttributeDefinition not found with id: " + attributeId + " for entityTypeId: " + entityTypeId));
 
-        // System Field Immutability Guard: Tenants cannot delete system attributes
-        if ("SYSTEM".equalsIgnoreCase(attr.getTenantId())) {
+        // System Field Immutability Guard: Tenants cannot delete system attributes, but SYSTEM custodian can
+        String deleteCallerTenant = com.unipost.fw.tenancy.TenantContextHolder.getTenantId();
+        boolean isDeleteSovereign = "SYSTEM".equalsIgnoreCase(deleteCallerTenant) || com.unipost.fw.tenancy.TenantContextHolder.isSovereignActor();
+        if ("SYSTEM".equalsIgnoreCase(attr.getTenantId()) && !isDeleteSovereign) {
             throw new MetadataConflictException("System attributes (tenant_id = 'SYSTEM') are immutable and cannot be deleted by tenant admins");
         }
 
@@ -305,7 +309,9 @@ public class MetadataService {
         AttributeDefinition attr = attributeDefinitionRepository.findByEntityTypeIdAndIdAndDeletedDateIsNull(entityTypeId, attributeId)
                 .orElseThrow(() -> new MetadataNotFoundException("AttributeDefinition not found with id: " + attributeId + " for entityTypeId: " + entityTypeId));
 
-        if ("SYSTEM".equalsIgnoreCase(attr.getTenantId())) {
+        String archiveCallerTenant = com.unipost.fw.tenancy.TenantContextHolder.getTenantId();
+        boolean isArchiveSovereign = "SYSTEM".equalsIgnoreCase(archiveCallerTenant) || com.unipost.fw.tenancy.TenantContextHolder.isSovereignActor();
+        if ("SYSTEM".equalsIgnoreCase(attr.getTenantId()) && !isArchiveSovereign) {
             throw new MetadataConflictException("System attributes (tenant_id = 'SYSTEM') are immutable and cannot be archived by tenant admins");
         }
 

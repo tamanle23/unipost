@@ -41,6 +41,14 @@ public class TenantSessionAspect {
             }
             try {
                 jdbcTemplate.execute("SET LOCAL app.current_tenant_id = '" + trimmedTenantId + "'");
+                
+                // Flag PostgreSQL session if operating under Sovereign Custodian authority
+                if (TenantContextHolder.isSovereignActor() || "SYSTEM".equalsIgnoreCase(trimmedTenantId)) {
+                    jdbcTemplate.execute("SET LOCAL app.is_system_custodian = 'true'");
+                } else {
+                    jdbcTemplate.execute("SET LOCAL app.is_system_custodian = 'false'");
+                }
+
                 // Tier 3 Database Circuit Breaker: Strict 3000ms query timeout to prevent runaway queries from locking connection pools
                 jdbcTemplate.execute("SET LOCAL statement_timeout = '3000ms'");
             } catch (Exception e) {

@@ -25,7 +25,7 @@ export const LandingPage: React.FC = () => {
   };
 
   const handleOpenSignIn = () => {
-    navigate({ to: '/(auth)/sign-in' as any });
+    navigate({ to: '/sign-in' as any });
   };
 
   return (
