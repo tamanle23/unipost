@@ -1,6 +1,13 @@
-import { render } from '@testing-library/react';
+import { render, fireEvent } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import { axe } from 'vitest-axe';
+
+declare module 'vitest' {
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  export interface Assertion<R extends void | Promise<void> = void, T = unknown> {
+    toHaveNoViolations(): any;
+  }
+}
 
 vi.mock('@/components/command-menu', () => ({
   CommandMenu: () => null,
@@ -12,6 +19,7 @@ import { ConfirmDialog } from '../confirm-dialog';
 import { DataTablePagination } from '../data-table/pagination';
 import { Search } from '../search';
 import { SearchProvider } from '@/context/search-provider';
+import { SidebarProvider, SidebarTrigger } from '../ui/sidebar';
 
 describe('Component Accessibility Test Suite (axe-core)', () => {
   it('SkipToMain component should have zero a11y violations', async () => {
@@ -98,5 +106,35 @@ describe('Component Accessibility Test Suite (axe-core)', () => {
 
     const button = getByRole('button', { name: /Search docs \(Press Ctrl\+K or Cmd\+K\)/i });
     expect(button).toBeDefined();
+  });
+
+  it('SidebarTrigger component should have zero a11y violations and dynamic ARIA state', async () => {
+    window.matchMedia = window.matchMedia || vi.fn().mockImplementation((query) => ({
+      matches: false,
+      media: query,
+      onchange: null,
+      addListener: vi.fn(),
+      removeListener: vi.fn(),
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+      dispatchEvent: vi.fn(),
+    }));
+
+    const { container, getByRole } = render(
+      <SidebarProvider defaultOpen={true}>
+        <SidebarTrigger />
+      </SidebarProvider>
+    );
+
+    const results = await axe(container);
+    expect(results).toHaveNoViolations();
+
+    const triggerBtn = getByRole('button', { name: 'Collapse sidebar' });
+    expect(triggerBtn.getAttribute('aria-expanded')).toBe('true');
+
+    fireEvent.click(triggerBtn);
+
+    const updatedBtn = getByRole('button', { name: 'Expand sidebar' });
+    expect(updatedBtn.getAttribute('aria-expanded')).toBe('false');
   });
 });
